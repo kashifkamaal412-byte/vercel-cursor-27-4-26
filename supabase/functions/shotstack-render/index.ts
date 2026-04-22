@@ -8,6 +8,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:8080',
+  'https://profitmadia.vercel.app',
+  'https://profitmadia.vercel.app/'
 ];
 
 function getCorsHeaders(req: Request) {
@@ -32,7 +34,7 @@ interface RenderRequest {
     audioVolume?: number;
   };
   renderId?: string;
-  sourceUrl?: string; // For transfer action - the temporary Shotstack URL
+  sourceUrl?: string;
 }
 
 serve(async (req) => {
@@ -77,8 +79,13 @@ serve(async (req) => {
     }
 
     const { action, videoUrl, editSettings, renderId, sourceUrl } = await req.json() as RenderRequest;
-    const SHOTSTACK_BASE_URL = 'https://api.shotstack.io/edit/stage/render';
-    // Transfer rendered video from Shotstack to Supabase Storage
+    
+    // Determine the environment and base URL dynamically
+    const env = Deno.env.get('SHOTSTACK_ENV');
+    const SHOTSTACK_BASE_URL = env === 'v1' 
+      ? 'https://api.shotstack.io/edit/v1' 
+      : 'https://api.shotstack.io/edit/stage';
+
     if (action === 'transfer') {
       if (!sourceUrl) {
         return new Response(
@@ -89,7 +96,6 @@ serve(async (req) => {
 
       console.log('Transferring video to permanent storage for user:', user.id);
 
-      // Validate sourceUrl to prevent SSRF — only allow Shotstack CDN domains over HTTPS
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(sourceUrl);
@@ -108,7 +114,6 @@ serve(async (req) => {
         );
       }
 
-      // Download the video from Shotstack's temporary URL
       const videoResponse = await fetch(sourceUrl);
       if (!videoResponse.ok) {
         console.error('Failed to download video from Shotstack:', videoResponse.status);
@@ -120,10 +125,7 @@ serve(async (req) => {
 
       const videoBlob = await videoResponse.blob();
       const videoBuffer = await videoBlob.arrayBuffer();
-      
-      // Use service role client for storage upload
       const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-      
       const fileName = `${user.id}/edited_${Date.now()}.mp4`;
       
       const { data: uploadData, error: uploadError } = await adminClient.storage
@@ -142,9 +144,6 @@ serve(async (req) => {
         );
       }
 
-      // Return the storage path (not public URL) - client resolves via signed URLs
-      console.log('Video transferred successfully:', uploadData.path);
-
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -158,16 +157,13 @@ serve(async (req) => {
     if (action === 'render') {
       console.log('Starting Shotstack render for user:', user.id);
 
-      // Validate that the video URL belongs to the authenticated user
       if (videoUrl) {
-        // Check if video exists in our database and belongs to this user
         const { data: videoRecord } = await supabaseClient
           .from('videos')
           .select('user_id')
           .eq('video_url', videoUrl)
           .maybeSingle();
 
-        // If video is in our DB but belongs to another user, reject
         if (videoRecord && videoRecord.user_id !== user.id) {
           return new Response(
             JSON.stringify({ error: 'You can only edit your own videos' }),
@@ -175,7 +171,6 @@ serve(async (req) => {
           );
         }
 
-        // Also check if it's a Supabase storage URL in another user's folder
         const supabaseStoragePattern = /\/storage\/v1\/object\/public\/videos\/([^/]+)\//;
         const match = videoUrl.match(supabaseStoragePattern);
         if (match && match[1] !== user.id) {
@@ -187,7 +182,6 @@ serve(async (req) => {
       }
 
       const timeline = buildShotstackTimeline(videoUrl!, editSettings!);
-
       const renderPayload = {
         timeline,
         output: {
@@ -217,9 +211,7 @@ serve(async (req) => {
 
       const renderData = await renderResponse.json();
       const newRenderId = renderData.response.id;
-      console.log('Render started:', newRenderId);
-
-      // Persist render job ownership for status checks
+      
       const adminClient = createClient(supabaseUrl, supabaseServiceKey);
       await adminClient.from('render_jobs').insert({
         render_id: newRenderId,
@@ -244,7 +236,6 @@ serve(async (req) => {
         );
       }
 
-      // Verify the authenticated user owns this render job
       const adminClient = createClient(supabaseUrl, supabaseServiceKey);
       const { data: job } = await adminClient
         .from('render_jobs')
@@ -325,7 +316,6 @@ function buildShotstackTimeline(videoUrl: string, settings: RenderRequest['editS
 
   const tracks: any[] = [{ clips: [videoClip] }];
 
-  // Add audio overlay if provided
   if (audioUrl) {
     tracks.push({
       clips: [{

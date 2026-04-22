@@ -54,15 +54,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signUp = async (email: string, password: string, metadata?: { display_name?: string }) => {
-    const redirectUrl = `${window.location.origin}/`;
     const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: metadata
-      }
-    });
+          email,
+          password,
+          options: {
+            data: metadata
+          }
+        });
     if (error) {
       if (error.message.includes('already registered')) {
         toast.error('This email is already registered. Please sign in instead.');

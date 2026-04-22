@@ -1,10 +1,24 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+const allowedOrigins = [
+  "https://shortly.lovable.app",
+  "https://id-preview--03dda6d1-e2fa-4e50-a1bd-5e8508198fa1.lovable.app",
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:8080",
+  "https://profitmadia.vercel.app",
+  "https://profitmadia.vercel.app/"
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  };
+}
 
 const TOKEN_EFFECTIVE_TIME_SECONDS = 7200;
 const IV_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";

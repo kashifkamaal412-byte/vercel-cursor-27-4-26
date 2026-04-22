@@ -8,6 +8,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:8080',
+  'https://profitmadia.vercel.app',
+  'https://profitmadia.vercel.app/'
 ];
 
 function getCorsHeaders(req: Request) {
