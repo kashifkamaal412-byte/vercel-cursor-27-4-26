@@ -1,0 +1,1 @@
+ALTER TABLE public.videos ADD COLUMN IF NOT EXISTS pinned_at timestamp with time zone DEFAULT NULL;
