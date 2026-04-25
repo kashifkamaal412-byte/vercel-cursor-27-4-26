@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <AlertCircle className="w-8 h-8 text-destructive" />
             </div>
             <h2 className="text-lg font-bold text-foreground mb-2">
-              Something went wrong
+              An error occurred. Please try again later.
             </h2>
             <p className="text-sm text-muted-foreground mb-6">
               An unexpected error occurred. Please try again.

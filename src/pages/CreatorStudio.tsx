@@ -173,14 +173,6 @@ const CreatorStudio = () => {
                     <h4 className="text-sm font-medium mb-3">Quick Stats</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div>
-                        <p className="text-2xl font-bold gradient-text">{videos.length}</p>
-                        <p className="text-xs text-muted-foreground">Total Videos</p>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold text-accent">{posts.length}</p>
-                        <p className="text-xs text-muted-foreground">Total Posts</p>
-                      </div>
-                      <div>
                         <p className="text-2xl font-bold text-secondary">{formatCompact(totalGifts)}</p>
                         <p className="text-xs text-muted-foreground">Total Gifts</p>
                       </div>

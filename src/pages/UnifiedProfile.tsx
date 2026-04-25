@@ -79,11 +79,13 @@ import { DraftsTab } from "@/components/profile/DraftsTab";
 import { PrivateContentTab } from "@/components/profile/PrivateContentTab";
 import { SavedContentTab } from "@/components/profile/SavedContentTab";
 
-// Base tabs (always visible) - Videos and Posts tabs removed per user request
+// Base tabs (always visible) - Videos and Posts tabs restored
 const baseTabs = [
-  { id: "shorts", label: "Shorts", icon: Grid3X3 },
-  { id: "saved", label: "Saved", icon: Bookmark },
-  { id: "live", label: "Live", icon: Radio },
+ { id: "shorts", label: "Shorts", icon: Grid3X3 },
+ { id: "videos", label: "Videos", icon: Film },
+ { id: "saved", label: "Saved", icon: Bookmark },
+ { id: "live", label: "Live", icon: Radio },
+ { id: "posts", label: "Posts", icon: FileText },
 ];
 // Additional tabs for profile owner only
 const ownerTabs = [
@@ -1302,7 +1304,6 @@ const UnifiedProfile = ({ isOwnProfilePage = false }: UnifiedProfileProps) => {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-base font-semibold text-foreground">@{displayProfile?.username || "username"}</h1>
             <div className="flex items-center gap-2">
               {isOwnProfile && user && (
                 <button
