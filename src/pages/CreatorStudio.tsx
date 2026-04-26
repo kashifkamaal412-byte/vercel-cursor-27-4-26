@@ -180,6 +180,14 @@ const CreatorStudio = () => {
                         <p className="text-2xl font-bold text-green-400">${formatCompact(walletData.totalBalance)}</p>
                         <p className="text-xs text-muted-foreground">Total Earnings</p>
                       </div>
+                      <div>
+                        <p className="text-2xl font-bold text-primary">{formatCompact(videos.length)}</p>
+                        <p className="text-xs text-muted-foreground">Total Videos</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-primary">{formatCompact(posts.length)}</p>
+                        <p className="text-xs text-muted-foreground">Total Posts</p>
+                      </div>
                     </div>
                   </div>
                 </div>
