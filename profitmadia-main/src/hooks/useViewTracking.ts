@@ -1,11 +1,13 @@
 import { useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Hook to track video views once per session per video
  * Uses a Set to prevent duplicate view counts within the same browser session
  */
 export const useViewTracking = () => {
+  const { user } = useAuth();
   // Session-based tracking - views reset when user closes/refreshes page
   const viewedVideosRef = useRef<Set<string>>(new Set());
 
@@ -18,9 +20,12 @@ export const useViewTracking = () => {
     // Mark as viewed immediately to prevent race conditions
     viewedVideosRef.current.add(videoId);
 
-    // Call the database function to increment view count
-    // Using raw SQL call since the RPC isn't in generated types yet
-    const { error } = await (supabase as any).rpc("increment_view_count", {
+    if (!user) {
+      return false;
+    }
+
+    const { error } = await supabase.from("view_tracking").insert({
+      user_id: user.id,
       video_id: videoId,
     });
 
@@ -34,7 +39,7 @@ export const useViewTracking = () => {
     }
 
     return true;
-  }, []);
+  }, [user]);
 
   const hasViewed = useCallback((videoId: string): boolean => {
     return viewedVideosRef.current.has(videoId);

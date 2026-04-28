@@ -33,6 +33,11 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
 
+      const details =
+        import.meta.env.DEV && this.state.error
+          ? `${this.state.error.name}: ${this.state.error.message}`
+          : null;
+
       return (
         <div className="min-h-screen bg-background flex items-center justify-center p-6">
           <div className="text-center max-w-sm">
@@ -45,6 +50,11 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-muted-foreground mb-6">
               An unexpected error occurred. Please try again.
             </p>
+            {details && (
+              <pre className="text-left text-xs bg-muted/30 border border-border rounded-lg p-3 mb-4 overflow-auto max-h-40 whitespace-pre-wrap">
+                {details}
+              </pre>
+            )}
             <button
               onClick={this.handleRetry}
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-full text-sm font-semibold hover:opacity-90 transition-opacity"

@@ -10,6 +10,8 @@ export const useUserVideos = (userId?: string) => {
   const [likedVideos, setLikedVideos] = useState<Video[]>([]);
   const [savedVideos, setSavedVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const targetUserId = userId || user?.id;
 
@@ -134,6 +136,9 @@ export const useUserVideos = (userId?: string) => {
       if (import.meta.env.DEV) {
         console.error("Error fetching user videos:", error);
       }
+      // Show error UI or redirect
+      setError(true);
+      setErrorMessage("Failed to load profile. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -195,6 +200,8 @@ export const useUserProfile = (userId: string) => {
     created_at: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -215,6 +222,8 @@ export const useUserProfile = (userId: string) => {
         if (import.meta.env.DEV) {
           console.error("Error fetching profile:", error);
         }
+        setError(true);
+        setErrorMessage("Failed to load profile. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -233,5 +242,5 @@ export const useUserProfile = (userId: string) => {
     setProfile((prev) => prev ? { ...prev, ...updates } : prev);
   };
 
-  return { profile, loading, updateProfile };
+  return { profile, loading, error, errorMessage, updateProfile };
 };

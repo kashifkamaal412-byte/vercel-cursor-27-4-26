@@ -123,13 +123,14 @@ export const useCreatorAnalytics = () => {
   const fetchAudienceData = useCallback(async () => {
     if (!user || videos.length === 0) return;
 
-    // Use the RPC function to get anonymized analytics for all user's videos
+    // Query the table directly through RLS while selecting only safe columns.
     const allAnalytics: any[] = [];
     
     for (const video of videos) {
-      const { data } = await supabase.rpc("get_anonymized_analytics", {
-        p_video_id: video.id,
-      });
+      const { data } = await supabase
+        .from("audience_analytics")
+        .select("id, video_id, watch_hour, created_at, country, region, age_group, gender")
+        .eq("video_id", video.id);
       if (data) {
         allAnalytics.push(...data);
       }

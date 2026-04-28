@@ -41,6 +41,8 @@ import {
   Volume2,
   VolumeX,
   Camera,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -827,7 +829,7 @@ const UnifiedProfile = ({ isOwnProfilePage = false }: UnifiedProfileProps) => {
   const targetUserId = isOwnProfilePage ? user?.id : paramUserId;
   const isOwnProfile = user?.id === targetUserId;
 
-  const { profile, loading: profileLoading } = useUserProfile(targetUserId || "");
+  const { profile, loading: profileLoading, error, errorMessage } = useUserProfile(targetUserId || "");
   const { userVideos, loading: videosLoading, mutate: mutateVideos } = useUserVideos(targetUserId);
   const { followUser, unfollowUser, checkFollowing } = useVideoActions();
 
@@ -1232,6 +1234,25 @@ const UnifiedProfile = ({ isOwnProfilePage = false }: UnifiedProfileProps) => {
       <MainLayout>
         <div className="min-h-screen flex items-center justify-center">
           <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (error && !isPreviewMode) {
+    return (
+      <MainLayout>
+        <div className="min-h-screen flex flex-col items-center justify-center px-6">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-destructive" />
+          </div>
+          <h2 className="text-xl font-bold text-foreground mb-2">Profile Loading Error</h2>
+          <p className="text-muted-foreground mb-6 text-center max-w-sm">
+            {errorMessage || "Failed to load profile. Please try again later."}
+          </p>
+          <Button variant="glow" onClick={() => window.location.reload()}>
+            <RefreshCw className="w-4 h-4 mr-2" /> Retry
+          </Button>
         </div>
       </MainLayout>
     );

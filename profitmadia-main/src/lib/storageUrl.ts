@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const SIGNED_URL_EXPIRY = 3600; // 1 hour
 const urlCache = new Map<string, { url: string; expiry: number }>();
+const PUBLIC_BUCKETS = new Set(["avatars", "covers", "sounds", "thumbnails"]);
 
 /**
  * Extract the storage path from a full Supabase public URL or return as-is if already a path.
@@ -58,6 +59,10 @@ export async function resolveSignedUrl(
   }
 
   const storagePath = extractStoragePath(urlOrPath, bucket);
+
+  if (PUBLIC_BUCKETS.has(bucket)) {
+    return supabase.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl;
+  }
 
   // Check cache
   const cached = urlCache.get(`${bucket}:${storagePath}`);
