@@ -37,7 +37,11 @@ function extractStoragePath(urlOrPath: string, bucket: string): string {
  * Check if a URL is a Supabase storage URL for the given bucket
  */
 function isStorageUrl(url: string, bucket: string): boolean {
-  if (!url.startsWith("http")) return true; // relative path = storage
+  // Data URLs (Base64) are not storage URLs and should be used as‑is
+  if (url.startsWith("data:")) return false;
+  // Relative paths (no protocol) are considered storage URLs
+  if (!url.startsWith("http")) return true;
+  // Full Supabase storage URLs contain the storage path and bucket name
   return url.includes(`/storage/`) && url.includes(`/${bucket}/`);
 }
 
@@ -52,12 +56,18 @@ export async function resolveSignedUrl(
 ): Promise<string | null> {
   if (!urlOrPath) return null;
 
-  // Skip non-storage URLs (e.g., external CDN links)
+  // Skip non-storage URLs (e.g., external CDN links, data URLs, draft files)
+  if (urlOrPath.startsWith("data:")) return urlOrPath;
   if (urlOrPath.startsWith("http") && !isStorageUrl(urlOrPath, bucket)) {
     return urlOrPath;
   }
 
+  // Skip draft files (they don't exist in storage)
   const storagePath = extractStoragePath(urlOrPath, bucket);
+  if (storagePath.includes("draft_") || storagePath.includes("/draft")) {
+    console.warn(`[storageUrl] Skipping draft file: ${storagePath}`);
+    return null;
+  }
 
   // Check cache
   const cached = urlCache.get(`${bucket}:${storagePath}`);
@@ -70,8 +80,13 @@ export async function resolveSignedUrl(
     .createSignedUrl(storagePath, SIGNED_URL_EXPIRY);
 
   if (error || !data?.signedUrl) {
+    // Object not found (404) or other error - return null to trigger fallback UI
+    if (error?.message?.includes("Object not found") || error?.status === 400) {
+      console.warn(`[storageUrl] Object not found: ${bucket}/${storagePath}`);
+      return null;
+    }
     console.warn(`[storageUrl] Failed to sign ${bucket}/${storagePath}:`, error?.message);
-    // Return original as fallback
+    // Return original as fallback for non-critical errors
     return urlOrPath;
   }
 

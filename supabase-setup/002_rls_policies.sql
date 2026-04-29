@@ -1,7 +1,6 @@
 -- ===========================================
 -- ROW LEVEL SECURITY POLICIES
 -- ===========================================
-
 -- Enable RLS on ALL tables
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.videos ENABLE ROW LEVEL SECURITY;
@@ -314,7 +313,6 @@ CREATE POLICY "Admin chat - admin only view" ON public.admin_chat_messages FOR S
 CREATE POLICY "Admin chat - admin only insert" ON public.admin_chat_messages FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')
 );
-
 CREATE POLICY "AI alerts - admin only view" ON public.ai_alerts FOR SELECT USING (
   EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')
 );
@@ -324,12 +322,19 @@ CREATE POLICY "AI alerts - admin only insert" ON public.ai_alerts FOR INSERT WIT
 CREATE POLICY "AI alerts - admin only update" ON public.ai_alerts FOR UPDATE USING (
   EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')
 );
-
 CREATE POLICY "AI tasks - admin only" ON public.ai_tasks FOR ALL USING (
   EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')
 );
-
 CREATE POLICY "Warnings - admin manage" ON public.user_warnings FOR ALL TO authenticated USING (
   EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')
 );
 CREATE POLICY "Warnings - users view own" ON public.user_warnings FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- =====================
+-- VIEW TRACKING (additional policy)
+-- =====================
+CREATE POLICY "Authenticated users can insert view tracking"
+  ON public.view_tracking
+  FOR INSERT TO authenticated
+  USING (true)
+  WITH CHECK (true);
