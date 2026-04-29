@@ -8,7 +8,12 @@ export default {
     "./src/pages/**/*.{ts,tsx}",
     "./src/components/**/*.{ts,tsx}",
     "./src/hooks/**/*.{ts,tsx}",
-    "./src/lib/**/*.{ts,tsx}"
+    "./src/lib/**/*.{ts,tsx}",
+    "./profitmadia-main/src/**/*.{ts,tsx,js,jsx}",
+    "./profitmadia-main/src/pages/**/*.{ts,tsx}",
+    "./profitmadia-main/src/components/**/*.{ts,tsx}",
+    "./profitmadia-main/src/hooks/**/*.{ts,tsx}",
+    "./profitmadia-main/src/lib/**/*.{ts,tsx}"
   ],
   prefix: "",
   theme: {

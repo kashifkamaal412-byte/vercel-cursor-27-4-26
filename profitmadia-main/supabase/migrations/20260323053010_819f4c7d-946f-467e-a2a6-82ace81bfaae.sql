@@ -1,3 +1,0 @@
-UPDATE videos SET video_url = regexp_replace(video_url, '^https://mfuxrjdjcxjsxgqfzwfd\.supabase\.co/storage/v1/object/public/videos/', '') WHERE video_url LIKE 'https://mfuxrjdjcxjsxgqfzwfd.supabase.co/storage/v1/object/public/videos/%';
-
-UPDATE videos SET thumbnail_url = regexp_replace(thumbnail_url, '^https://mfuxrjdjcxjsxgqfzwfd\.supabase\.co/storage/v1/object/public/thumbnails/', '') WHERE thumbnail_url LIKE 'https://mfuxrjdjcxjsxgqfzwfd.supabase.co/storage/v1/object/public/thumbnails/%';

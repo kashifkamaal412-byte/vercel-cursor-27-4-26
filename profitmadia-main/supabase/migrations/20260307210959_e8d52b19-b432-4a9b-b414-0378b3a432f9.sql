@@ -1,1 +1,0 @@
-DROP POLICY IF EXISTS "Users can view public profiles" ON public.profiles;
