@@ -1491,6 +1491,11 @@ const UnifiedProfile = ({ isOwnProfilePage = false }: UnifiedProfileProps) => {
               </p>
               <p className="text-xs text-muted-foreground">Gifts</p>
             </button>
+            {/* Total Videos */}
+            <div className="text-center">
+              <p className="text-xl font-bold text-foreground">{formatNumber(totalVideos)}</p>
+              <p className="text-xs text-muted-foreground">Total Videos</p>
+            </div>
           </div>
 
           <AnimatePresence>
