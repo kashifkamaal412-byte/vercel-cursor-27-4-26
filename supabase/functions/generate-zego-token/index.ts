@@ -122,16 +122,27 @@ function buildPayload(roomId: string, role: ParticipantRole): string {
   });
 }
 
+/** Convert hex string to Uint8Array (32 bytes from 64-char hex) */
+function hexToBytes(hex: string): Uint8Array {
+  if (hex.length !== 64) throw new Error("Invalid hex string length");
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 async function generateToken04(
   appId: number,
   userId: string,
-  serverSecret: string,
+  serverSecretHex: string,
   payload: string,
   effectiveTimeInSeconds = TOKEN_EFFECTIVE_TIME_SECONDS,
 ): Promise<string> {
   if (!appId || !Number.isFinite(appId)) throw new Error("Invalid ZEGO app id");
   if (!userId) throw new Error("Invalid user id");
-  if (serverSecret.length !== 32) throw new Error("Invalid ZEGO server secret length");
+
+  const serverSecretBytes = hexToBytes(serverSecretHex);
 
   const now = Math.floor(Date.now() / 1000);
   const expire = now + effectiveTimeInSeconds;
@@ -147,7 +158,7 @@ async function generateToken04(
 
   const plainText = encoder.encode(JSON.stringify(tokenInfo));
   const iv = makeRandomIv();
-  const encrypted = await aesEncrypt(plainText, encoder.encode(serverSecret), iv);
+  const encrypted = await aesEncrypt(plainText, serverSecretBytes, iv);
 
   const packed = concatBytes([packInt64(expire), packString(iv), packString(encrypted)]);
   return `04${btoa(bytesToBinaryString(packed))}`;
@@ -155,7 +166,7 @@ async function generateToken04(
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   try {
@@ -164,7 +175,7 @@ Deno.serve(async (req) => {
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -179,7 +190,7 @@ Deno.serve(async (req) => {
       console.error("[generate-zego-token] Auth failed:", authError?.message);
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -190,7 +201,7 @@ Deno.serve(async (req) => {
     } catch {
       return new Response(JSON.stringify({ error: "Invalid request body" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -200,14 +211,14 @@ Deno.serve(async (req) => {
     if (!roomId || typeof roomId !== "string" || roomId.length > 200) {
       return new Response(JSON.stringify({ error: "Invalid roomId" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     if (sessionKey !== undefined && (typeof sessionKey !== "string" || sessionKey.length > 32)) {
       return new Response(JSON.stringify({ error: "Invalid sessionKey" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -227,31 +238,31 @@ Deno.serve(async (req) => {
         console.error("[generate-zego-token] Host role denied: not stream creator");
         return new Response(JSON.stringify({ error: "Not authorized as host for this stream" }), {
           status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
     }
 
     // Read Zego secrets
     const appIdStr = Deno.env.get("ZEGO_APP_ID") || "";
-    const serverSecret = Deno.env.get("ZEGO_SERVER_SECRET") || "";
+    const serverSecretHex = Deno.env.get("ZEGO_SERVER_SECRET") || "";
 
-    console.log(`[generate-zego-token] AppID present: ${!!appIdStr}, Secret length: ${serverSecret.length}, Role: ${normalizedRole}`);
+    console.log(`[generate-zego-token] AppID present: ${!!appIdStr}, Secret length: ${serverSecretHex.length}, Role: ${normalizedRole}`);
 
     const appId = parseInt(appIdStr, 10);
     if (!appId || !Number.isFinite(appId)) {
       console.error("[generate-zego-token] Invalid ZEGO_APP_ID:", appIdStr);
       return new Response(JSON.stringify({ error: "Zego not configured: invalid app ID" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
-    if (!serverSecret || serverSecret.length !== 32) {
-      console.error("[generate-zego-token] Invalid ZEGO_SERVER_SECRET length:", serverSecret.length);
+    if (!serverSecretHex || serverSecretHex.length !== 64) {
+      console.error("[generate-zego-token] Invalid ZEGO_SERVER_SECRET length:", serverSecretHex.length);
       return new Response(JSON.stringify({ error: "Zego not configured: invalid server secret" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -267,20 +278,20 @@ Deno.serve(async (req) => {
     console.log(`[generate-zego-token] Sanitized roomId: ${sanitizedRoomId}, zegoUserId: ${zegoUserId}`);
 
     const payload = buildPayload(sanitizedRoomId, normalizedRole);
-    const token = await generateToken04(appId, zegoUserId, serverSecret, payload);
+    const token = await generateToken04(appId, zegoUserId, serverSecretHex, payload);
 
     return new Response(
       JSON.stringify({ token, appId, zegoUserId, sanitizedRoomId }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   } catch (error) {
     console.error("[generate-zego-token] error", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   }
 });

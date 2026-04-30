@@ -18,7 +18,7 @@ const Live = () => {
   const [view, setView] = useState<LiveView>("discovery");
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
   const [selectedStream, setSelectedStream] = useState<LiveStream | null>(null);
-  const { endStream, joinStream, leaveStream } = useLiveStream();
+  const { endStream, joinStream, leaveStream, createStream } = useLiveStream();
 
   // Handle coming from Create page with stream already created
   useEffect(() => {
@@ -57,6 +57,23 @@ const Live = () => {
     setSelectedStream(null);
   };
 
+  const handleStartLive = async () => {
+    if (!user) {
+      toast.error("Please sign in to start live");
+      navigate("/auth");
+      return;
+    }
+    try {
+      const stream = await createStream("My Live Stream", "general", "public");
+      setActiveStreamId(stream.id);
+      setView("creator-room");
+      toast.success("Starting live stream...");
+    } catch (e) {
+      console.error("Failed to start live:", e);
+      toast.error("Failed to start live stream");
+    }
+  };
+
   if (view === "creator-room" && activeStreamId) {
     return (
       <CreatorLiveRoom
@@ -77,7 +94,15 @@ const Live = () => {
 
   return (
     <MainLayout>
-      <LiveDiscovery onSelectStream={handleSelectStream} />
+      <div className="flex flex-col items-center space-y-4 p-6">
+        <button
+          className="px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-lg hover:bg-red-700 transition-colors"
+          onClick={handleStartLive}
+        >
+          🔴 Start Live Stream
+        </button>
+        <LiveDiscovery onSelectStream={handleSelectStream} />
+      </div>
     </MainLayout>
   );
 };

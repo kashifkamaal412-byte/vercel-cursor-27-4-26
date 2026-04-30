@@ -32,7 +32,7 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
   const chatMessages = useLiveRealtimeChat(stream.id);
   const viewerCount = useLiveRealtimeViewers(stream.id);
   const { latestGift } = useLiveRealtimeGifts(stream.id);
-  const { joinStream, leaveStream, sendChatMessage: sendDbChat, sendLiveGift, requestToJoinAsGuest } = useLiveStream();
+  const { joinStream, leaveStream, sendChatMessage: sendDbChat, sendLiveGift, requestToJoinAsGuest, getZegoToken } = useLiveStream();
 
   const zegoContainerRef = useRef<HTMLDivElement>(null);
   const zpRef = useRef<any>(null);
@@ -157,19 +157,17 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
         setIsConnecting(true);
         await joinStream(stream.id);
 
-        const { data, error } = await supabase.functions.invoke("generate-zego-token", {
-          body: { roomId: stream.id, role: "audience", sessionKey: sessionKeyRef.current },
-        });
+        const tokenData = await getZegoToken(stream.id, "audience");
 
-        if (error || !data?.token || !data?.appId || !data?.zegoUserId) {
-          throw new Error(error?.message || "Token fetch failed");
+        if (!tokenData?.token || !tokenData?.appId || !tokenData?.zegoUserId) {
+          throw new Error("Failed to get Zego token");
         }
 
-        const sanitizedRoomId = data.sanitizedRoomId || stream.id.replace(/[^a-zA-Z0-9]/g, "");
+        const sanitizedRoomId = tokenData.sanitizedRoomId || stream.id.replace(/[^a-zA-Z0-9]/g, "");
         const userName = profile?.display_name || profile?.username || "Viewer";
 
         const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
-          data.appId, data.token, sanitizedRoomId, data.zegoUserId, userName
+          tokenData.appId, tokenData.token, sanitizedRoomId, tokenData.zegoUserId, userName
         );
 
         const zp = ZegoUIKitPrebuilt.create(kitToken);

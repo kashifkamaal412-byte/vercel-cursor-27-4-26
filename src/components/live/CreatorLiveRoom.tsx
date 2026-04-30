@@ -56,7 +56,7 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
   const initedRef = useRef(false);
   const endingRef = useRef(false);
   const sessionKeyRef = useRef(Math.random().toString(36).slice(2, 10));
-  const { endStream, sendChatMessage: sendDbChat } = useLiveStream();
+  const { endStream, sendChatMessage: sendDbChat, getZegoToken } = useLiveStream();
 
   useEffect(() => {
     const interval = setInterval(() => setTimer(prev => prev + 1), 1000);
@@ -109,19 +109,17 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
           return;
         }
 
-        const { data, error } = await supabase.functions.invoke("generate-zego-token", {
-          body: { roomId: streamId, role: "host", sessionKey: sessionKeyRef.current },
-        });
+        const tokenData = await getZegoToken(streamId, "host");
 
-        if (error || !data?.token || !data?.appId || !data?.zegoUserId) {
-          throw new Error(error?.message || "Failed to get token");
+        if (!tokenData?.token || !tokenData?.appId || !tokenData?.zegoUserId) {
+          throw new Error("Failed to get Zego token");
         }
 
-        const sanitizedRoomId = data.sanitizedRoomId || streamId.replace(/[^a-zA-Z0-9]/g, "");
+        const sanitizedRoomId = tokenData.sanitizedRoomId || streamId.replace(/[^a-zA-Z0-9]/g, "");
         const userName = profile?.display_name || profile?.username || `User_${user.id.slice(0, 4)}`;
 
         const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
-          data.appId, data.token, sanitizedRoomId, data.zegoUserId, userName
+          tokenData.appId, tokenData.token, sanitizedRoomId, tokenData.zegoUserId, userName
         );
 
         const zp = ZegoUIKitPrebuilt.create(kitToken);

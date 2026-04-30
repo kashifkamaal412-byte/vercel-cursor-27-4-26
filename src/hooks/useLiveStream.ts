@@ -156,6 +156,15 @@ export const useLiveStream = () => {
     if (error) throw error;
   };
 
+  // Get Zego token for a stream (calls Supabase Edge Function)
+  const getZegoToken = async (streamId: string, role: "host" | "audience") => {
+    const { data, error } = await supabase.functions.invoke("generate-zego-token", {
+      body: { roomId: streamId, role, sessionKey: Math.random().toString(36).slice(2, 10) },
+    });
+    if (error) throw error;
+    return data; // { token, appId, zegoUserId, sanitizedRoomId }
+  };
+
   return {
     createStream,
     endStream,
@@ -167,6 +176,7 @@ export const useLiveStream = () => {
     likeStream,
     requestToJoinAsGuest,
     updateGuestStatus,
+    getZegoToken,
   };
 };
 
