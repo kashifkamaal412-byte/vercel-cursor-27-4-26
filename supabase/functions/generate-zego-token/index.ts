@@ -118,7 +118,7 @@ function buildPayload(roomId: string, role: ParticipantRole): string {
   return JSON.stringify({
     room_id: roomId,
     privilege: { 1: 1, 2: canPublish },
-    stream_id_list: null,
+    stream_id_list: role === "host" ? [`${roomId}_main`] : [],
   });
 }
 

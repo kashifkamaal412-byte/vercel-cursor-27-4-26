@@ -91,6 +91,47 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
     checkBattle();
   }, [streamId]);
 
+  // Monitor video elements to ensure they're visible and playing
+  useEffect(() => {
+    const container = zegoContainerRef.current;
+    if (!container) return;
+
+    const observer = new MutationObserver(() => {
+      const videos = container.querySelectorAll('video');
+      videos.forEach((video) => {
+        const v = video as HTMLVideoElement;
+        if (v.style.display === 'none') v.style.display = 'block';
+        if (v.style.visibility === 'hidden') v.style.visibility = 'visible';
+        // Ensure video fills container
+        v.style.width = '100%';
+        v.style.height = '100%';
+        v.style.objectFit = 'cover';
+        v.style.position = 'absolute';
+        v.style.top = '0';
+        v.style.left = '0';
+        v.style.zIndex = '1';
+      });
+    });
+
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  // Check camera permission on mount
+  useEffect(() => {
+    const checkCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        console.log("🔴 [Creator] Camera check: SUCCESS - camera is available");
+        stream.getTracks().forEach(track => track.stop());
+      } catch (err: any) {
+        console.error("🔴 [Creator] Camera check FAILED:", err);
+        toast.error("Camera access denied. Please allow camera access and refresh.");
+      }
+    };
+    checkCamera();
+  }, []);
+
   useEffect(() => {
     if (!user?.id || !zegoContainerRef.current || initedRef.current) return;
 
@@ -99,32 +140,29 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
         setIsLoading(true);
         initedRef.current = true;
 
-        try {
-          const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          mediaStream.getTracks().forEach(t => t.stop());
-        } catch {
-          toast.error("Camera or microphone not available");
-          initedRef.current = false;
-          setIsLoading(false);
-          return;
-        }
-
-        const tokenData = await getZegoToken(streamId, "host");
-
-        if (!tokenData?.token || !tokenData?.appId || !tokenData?.zegoUserId) {
-          throw new Error("Failed to get Zego token");
-        }
-
-        const sanitizedRoomId = tokenData.sanitizedRoomId || streamId.replace(/[^a-zA-Z0-9]/g, "");
+        const sanitizedRoomId = streamId.replace(/[^a-zA-Z0-9]/g, "");
         const userName = profile?.display_name || profile?.username || `User_${user.id.slice(0, 4)}`;
-
-        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
-          tokenData.appId, tokenData.token, sanitizedRoomId, tokenData.zegoUserId, userName
+        
+        // Generate token using test method
+        const appId = parseInt(import.meta.env.VITE_ZEGO_APP_ID || "1497584012");
+        const appSign = import.meta.env.VITE_ZEGO_APP_SIGN || "";
+        const zegoUserId = `host_${user.id.slice(0, 8)}`;
+        
+        console.log("🔴 [Creator] Initializing Zego with:", { appId, zegoUserId, sanitizedRoomId, appSignLength: appSign.length });
+        
+        if (!appSign || appSign.length !== 64) {
+          throw new Error(`Invalid AppSign: length ${appSign.length}, expected 64`);
+        }
+        
+        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          appId, appSign, sanitizedRoomId, zegoUserId, userName
         );
 
+        console.log("🔴 [Creator] KitToken generated, creating Zego instance...");
         const zp = ZegoUIKitPrebuilt.create(kitToken);
         zpRef.current = zp;
 
+        console.log("🔴 [Creator] Joining room...");
         await zp.joinRoom({
           container: zegoContainerRef.current!,
           scenario: {
@@ -134,34 +172,54 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
           turnOnCameraWhenJoining: true,
           turnOnMicrophoneWhenJoining: true,
           showPreJoinView: false,
-          showMyCameraToggleButton: false,
-          showMyMicrophoneToggleButton: false,
+          showMyCameraToggleButton: true,
+          showMyMicrophoneToggleButton: true,
           showAudioVideoSettingsButton: false,
           showTextChat: false,
           showUserList: false,
           showLeavingView: false,
           layout: "Auto",
           onJoinRoom: () => {
+            console.log("🔴 [Creator] Successfully joined room!");
             setIsLoading(false);
             toast.success("You are LIVE! 🔴");
+            // Force camera on after join
+            setTimeout(() => {
+              try {
+                zp.turnCameraOn(true);
+                console.log("🔴 [Creator] Camera turned on after join");
+              } catch (e) {
+                console.error("🔴 [Creator] Error turning camera on:", e);
+              }
+            }, 500);
           },
-          onLeaveRoom: () => {
-            if (!endingRef.current) handleEndLive();
+          onLeaveRoom: (reason?: any) => {
+            console.log("🔴 [Creator] onLeaveRoom called, reason:", reason, "endingRef:", endingRef.current);
+            if (!endingRef.current) {
+              console.log("🔴 [Creator] Stream ended unexpectedly, ending...");
+              handleEndLive();
+            }
           },
         });
       } catch (error: any) {
         console.error("❌ [Creator] Init Failed:", error);
         initedRef.current = false;
         setIsLoading(false);
-        toast.error("Failed to start live — check camera and internet");
+        toast.error("Failed to start live: " + (error?.message || "Unknown error"));
       }
     };
 
     initializeZego();
 
     return () => {
+      console.log("🔴 [Creator] useEffect cleanup running");
       if (zpRef.current) {
-        try { zpRef.current.destroy(); } catch {}
+        try {
+          console.log("🔴 [Creator] Destroying Zego instance in cleanup");
+          zpRef.current.destroy();
+        } catch (e) {
+          console.error("🔴 [Creator] Error destroying Zego:", e);
+        }
         zpRef.current = null;
       }
     };
@@ -213,15 +271,23 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
   const formatTime = (s: number) =>
     `${Math.floor(s / 3600).toString().padStart(2, "0")}:${Math.floor((s % 3600) / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 
-  const beautyCSS = `
-    video { object-fit: cover !important; filter: brightness(${beautyBrightness}%) blur(${beautySmooth * 0.1}px) saturate(${beautyColorTone}%); }
-    [class*="leaveButton"], [class*="headerRight"], [class*="ZegoRoomHeader"] { display: none !important; }
-  `;
-
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-50">
-      <style>{beautyCSS}</style>
-      <div ref={zegoContainerRef} className="absolute inset-0 w-full h-full z-0" />
+      <style>{`
+        video {
+          object-fit: cover !important;
+          width: 100% !important;
+          height: 100% !important;
+          min-height: 100vh !important;
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          z-index: 1 !important;
+        }
+        [class*="leaveButton"], [class*="headerRight"], [class*="ZegoRoomHeader"] { display: none !important; }
+        [class*="videoContainer"], [class*="zego-video-container"] { width: 100% !important; height: 100% !important; position: absolute !important; top: 0 !important; left: 0 !important; }
+      `}</style>
+      <div ref={zegoContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '100vh' }} />
 
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-50">
@@ -387,36 +453,43 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
               <div className="flex items-center justify-center gap-4 text-sm text-white/50 mb-5">
                 <div className="text-center">
                   <p className="font-bold text-white">{viewerCount}</p>
-                  <p className="text-[10px]">Viewers</p>
+                  <p>Viewers</p>
                 </div>
-                <div className="w-px h-8 bg-white/10" />
                 <div className="text-center">
                   <p className="font-bold text-white">{formatTime(timer)}</p>
-                  <p className="text-[10px]">Duration</p>
+                  <p>Duration</p>
                 </div>
-                <div className="w-px h-8 bg-white/10" />
                 <div className="text-center">
-                  <p className="font-bold text-yellow-400">🪙 {totalCoinsEarned}</p>
-                  <p className="text-[10px]">Earned</p>
+                  <p className="font-bold text-yellow-400">{totalCoinsEarned}</p>
+                  <p>Coins</p>
                 </div>
               </div>
               <div className="flex gap-3">
-                <Button className="flex-1 rounded-xl h-11" variant="outline" onClick={() => setShowEndConfirm(false)}>Cancel</Button>
-                <Button className="flex-1 rounded-xl h-11 bg-red-600 hover:bg-red-700" onClick={handleEndLive}>End Stream</Button>
+                <Button variant="outline" className="flex-1 border-white/20" onClick={() => setShowEndConfirm(false)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" className="flex-1 bg-red-600" onClick={handleEndLive}>
+                  End Stream
+                </Button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Moderator Tools */}
+      {/* Guests Panel */}
       <AnimatePresence>
-        {showModerator && (
-          <ModeratorTools streamId={streamId} isCreator onClose={() => setShowModerator(false)} />
+        {showGuests && (
+          <MultiGuestPanel streamId={streamId} onClose={() => setShowGuests(false)} />
         )}
       </AnimatePresence>
 
-      {showGuests && <MultiGuestPanel streamId={streamId} onClose={() => setShowGuests(false)} isCreator />}
+      {/* Moderator Tools */}
+      <AnimatePresence>
+        {showModerator && (
+          <ModeratorTools streamId={streamId} onClose={() => setShowModerator(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

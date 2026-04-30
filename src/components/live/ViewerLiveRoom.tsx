@@ -147,6 +147,27 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
     return () => { supabase.removeChannel(channel); };
   }, [stream.id, onExit]);
 
+  // Ensure video elements are visible and fill the container for audience view
+  useEffect(() => {
+    const container = zegoContainerRef.current;
+    if (!container) return;
+    const observer = new MutationObserver(() => {
+      const videos = container.querySelectorAll('video');
+      videos.forEach((video) => {
+        const v = video as HTMLVideoElement;
+        v.style.width = '100%';
+        v.style.height = '100%';
+        v.style.objectFit = 'cover';
+        v.style.position = 'absolute';
+        v.style.top = '0';
+        v.style.left = '0';
+        v.style.zIndex = '1';
+      });
+    });
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   // Zego initialization
   useEffect(() => {
     if (!user || !zegoContainerRef.current || initedRef.current) return;
@@ -157,17 +178,16 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
         setIsConnecting(true);
         await joinStream(stream.id);
 
-        const tokenData = await getZegoToken(stream.id, "audience");
-
-        if (!tokenData?.token || !tokenData?.appId || !tokenData?.zegoUserId) {
-          throw new Error("Failed to get Zego token");
-        }
-
-        const sanitizedRoomId = tokenData.sanitizedRoomId || stream.id.replace(/[^a-zA-Z0-9]/g, "");
+        const sanitizedRoomId = stream.id.replace(/[^a-zA-Z0-9]/g, "");
         const userName = profile?.display_name || profile?.username || "Viewer";
-
-        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
-          tokenData.appId, tokenData.token, sanitizedRoomId, tokenData.zegoUserId, userName
+        
+        // Use test token generation with AppSign from env
+        const appId = parseInt(import.meta.env.VITE_ZEGO_APP_ID || "1497584012");
+        const appSign = import.meta.env.VITE_ZEGO_APP_SIGN || "";
+        const zegoUserId = `audience_${user.id.slice(0, 8)}`;
+        
+        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          appId, appSign, sanitizedRoomId, zegoUserId, userName
         );
 
         const zp = ZegoUIKitPrebuilt.create(kitToken);
@@ -216,6 +236,10 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
                 });
               }
             } catch {}
+          },
+          onLeaveRoom: () => {
+            console.log("🔴 [Viewer] onLeaveRoom called, exiting");
+            onExit();
           },
         });
       } catch (err: any) {
@@ -302,7 +326,7 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col">
-      <div ref={zegoContainerRef} className="absolute inset-0 w-full h-full z-0" />
+      <div ref={zegoContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '100vh' }} />
 
       {/* Connecting overlay */}
       <AnimatePresence>
@@ -553,8 +577,18 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
         .mask-fade-top {
           mask-image: linear-gradient(to top, black 80%, transparent 100%);
         }
-        video { object-fit: cover !important; }
+        video {
+          object-fit: cover !important;
+          width: 100% !important;
+          height: 100% !important;
+          min-height: 100vh !important;
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          z-index: 1 !important;
+        }
         [class*="leaveButton"], [class*="headerRight"], [class*="ZegoRoomHeader"] { display: none !important; }
+        [class*="videoContainer"], [class*="zego-video-container"] { width: 100% !important; height: 100% !important; position: absolute !important; top: 0 !important; left: 0 !important; }
       `}</style>
     </div>
   );
