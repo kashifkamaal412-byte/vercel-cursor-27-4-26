@@ -86,7 +86,23 @@ export const useLiveStream = () => {
 
     // Fetch creator profiles
     const creatorIds = (data || []).map((s: any) => s.creator_id);
-    const { data: profiles } = await supabase.from("public_profile_view").select("user_id, display_name, username, avatar_url").in("user_id", creatorIds);
+    // Fetch user profiles; fallback to the base "profiles" table if the view is unavailable
+    let profiles = [] as any[];
+    try {
+      const { data, error } = await supabase
+        .from("public_profile_view")
+        .select("user_id, display_name, username, avatar_url")
+        .in("user_id", creatorIds);
+      if (error) throw error;
+      profiles = data || [];
+    } catch (e) {
+      console.warn('[useLiveStream] public_profile_view unavailable, falling back to profiles table', e);
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id as user_id, display_name, username, avatar_url")
+        .in("id", creatorIds);
+      if (!error) profiles = data || [];
+    }
     const profileMap = new Map((profiles || []).map(p => [p.user_id, p]));
 
     return (data || []).map((s: any) => ({

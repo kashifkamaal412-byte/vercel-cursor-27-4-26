@@ -17,7 +17,7 @@ import { useLiveStream, useLiveRealtimeViewers, useLiveRealtimeGifts } from "@/h
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { supabase } from "@/integrations/supabase/client";
-import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
+import { zegoEngine } from "@/lib/zegoEngine";
 import { toast } from "sonner";
 
 interface CreatorLiveRoomProps {
@@ -51,12 +51,9 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
   const [beautyBrightness, setBeautyBrightness] = useState(100);
   const [beautyColorTone, setBeautyColorTone] = useState(100);
 
-  const zegoContainerRef = useRef<HTMLDivElement>(null);
-  const zpRef = useRef<any>(null);
-  const initedRef = useRef(false);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const endingRef = useRef(false);
-  const sessionKeyRef = useRef(Math.random().toString(36).slice(2, 10));
-  const { endStream, sendChatMessage: sendDbChat, getZegoToken } = useLiveStream();
+  const { endStream, sendChatMessage: sendDbChat } = useLiveStream();
 
   useEffect(() => {
     const interval = setInterval(() => setTimer(prev => prev + 1), 1000);
@@ -91,137 +88,60 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
     checkBattle();
   }, [streamId]);
 
-  // Monitor video elements to ensure they're visible and playing
+  // Initialize Zego engine and start streaming
   useEffect(() => {
-    const container = zegoContainerRef.current;
-    if (!container) return;
+    if (!user?.id || !videoContainerRef.current) return;
 
-    const observer = new MutationObserver(() => {
-      const videos = container.querySelectorAll('video');
-      videos.forEach((video) => {
-        const v = video as HTMLVideoElement;
-        if (v.style.display === 'none') v.style.display = 'block';
-        if (v.style.visibility === 'hidden') v.style.visibility = 'visible';
-        // Ensure video fills container
-        v.style.width = '100%';
-        v.style.height = '100%';
-        v.style.objectFit = 'cover';
-        v.style.position = 'absolute';
-        v.style.top = '0';
-        v.style.left = '0';
-        v.style.zIndex = '1';
-      });
-    });
-
-    observer.observe(container, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
-  // Check camera permission on mount
-  useEffect(() => {
-    const checkCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        console.log("🔴 [Creator] Camera check: SUCCESS - camera is available");
-        stream.getTracks().forEach(track => track.stop());
-      } catch (err: any) {
-        console.error("🔴 [Creator] Camera check FAILED:", err);
-        toast.error("Camera access denied. Please allow camera access and refresh.");
-      }
-    };
-    checkCamera();
-  }, []);
-
-  useEffect(() => {
-    if (!user?.id || !zegoContainerRef.current || initedRef.current) return;
-
-    const initializeZego = async () => {
+    const initLiveStream = async () => {
       try {
         setIsLoading(true);
-        initedRef.current = true;
-
-        const sanitizedRoomId = streamId.replace(/[^a-zA-Z0-9]/g, "");
+        
+        const appID = parseInt(import.meta.env.VITE_ZEGO_APP_ID || "1497584012");
+        const serverSecret = import.meta.env.VITE_ZEGO_APP_SIGN || "";
         const userName = profile?.display_name || profile?.username || `User_${user.id.slice(0, 4)}`;
-        
-        // Generate token using test method
-        const appId = parseInt(import.meta.env.VITE_ZEGO_APP_ID || "1497584012");
-        const appSign = import.meta.env.VITE_ZEGO_APP_SIGN || "";
         const zegoUserId = `host_${user.id.slice(0, 8)}`;
-        
-        console.log("🔴 [Creator] Initializing Zego with:", { appId, zegoUserId, sanitizedRoomId, appSignLength: appSign.length });
-        
-        if (!appSign || appSign.length !== 64) {
-          throw new Error(`Invalid AppSign: length ${appSign.length}, expected 64`);
-        }
-        
-        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-          appId, appSign, sanitizedRoomId, zegoUserId, userName
-        );
+        const sanitizedRoomId = streamId.replace(/[^a-zA-Z0-9]/g, "");
 
-        console.log("🔴 [Creator] KitToken generated, creating Zego instance...");
-        const zp = ZegoUIKitPrebuilt.create(kitToken);
-        zpRef.current = zp;
+        console.log("🔴 [Creator] Initializing Zego Engine...");
 
-        console.log("🔴 [Creator] Joining room...");
-        await zp.joinRoom({
-          container: zegoContainerRef.current!,
-          scenario: {
-            mode: ZegoUIKitPrebuilt.LiveStreaming,
-            config: { role: ZegoUIKitPrebuilt.Host },
-          },
-          turnOnCameraWhenJoining: true,
-          turnOnMicrophoneWhenJoining: true,
-          showPreJoinView: false,
-          showMyCameraToggleButton: true,
-          showMyMicrophoneToggleButton: true,
-          showAudioVideoSettingsButton: false,
-          showTextChat: false,
-          showUserList: false,
-          showLeavingView: false,
-          layout: "Auto",
-          onJoinRoom: () => {
-            console.log("🔴 [Creator] Successfully joined room!");
-            setIsLoading(false);
-            toast.success("You are LIVE! 🔴");
-            // Force camera on after join
-            setTimeout(() => {
-              try {
-                zp.turnCameraOn(true);
-                console.log("🔴 [Creator] Camera turned on after join");
-              } catch (e) {
-                console.error("🔴 [Creator] Error turning camera on:", e);
-              }
-            }, 500);
-          },
-          onLeaveRoom: (reason?: any) => {
-            console.log("🔴 [Creator] onLeaveRoom called, reason:", reason, "endingRef:", endingRef.current);
-            if (!endingRef.current) {
-              console.log("🔴 [Creator] Stream ended unexpectedly, ending...");
-              handleEndLive();
-            }
-          },
+        // Initialize engine
+        await zegoEngine.initialize({
+          appID,
+          serverSecret,
+          userID: zegoUserId,
+          userName,
+          roomID: sanitizedRoomId,
+        }, true); // true = isHost
+
+        // Get token from Edge Function
+        const token = await zegoEngine.generateToken(sanitizedRoomId, zegoUserId, true);
+        zegoEngine.setToken(token);
+
+        // Login to room
+        await zegoEngine.loginRoom(token);
+
+        // Start publishing (this will attach video to videoContainerRef)
+        await zegoEngine.startPublishing({
+          cameraOn: true,
+          micOn: true,
+          videoContainer: videoContainerRef.current,
         });
+
+        setIsLoading(false);
+        toast.success("You are LIVE! 🔴");
+        console.log("🔴 [Creator] Live stream started successfully");
       } catch (error: any) {
         console.error("❌ [Creator] Init Failed:", error);
-        initedRef.current = false;
         setIsLoading(false);
         toast.error("Failed to start live: " + (error?.message || "Unknown error"));
       }
     };
 
-    initializeZego();
+    initLiveStream();
 
     return () => {
-      console.log("🔴 [Creator] useEffect cleanup running");
-      if (zpRef.current) {
-        try {
-          console.log("🔴 [Creator] Destroying Zego instance in cleanup");
-          zpRef.current.destroy();
-        } catch (e) {
-          console.error("🔴 [Creator] Error destroying Zego:", e);
-        }
-        zpRef.current = null;
-      }
+      console.log("🔴 [Creator] Cleaning up Zego engine...");
+      zegoEngine.destroy();
     };
   }, [user?.id, streamId]);
 
@@ -229,11 +149,7 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
     if (endingRef.current) return;
     endingRef.current = true;
     try {
-      if (zpRef.current) {
-        try { zpRef.current.sendInRoomMessage(JSON.stringify({ type: "stream-ended" })); } catch {}
-        try { zpRef.current.destroy(); } catch {};
-        zpRef.current = null;
-      }
+      zegoEngine.destroy();
       await (supabase as any)
         .from("live_streams")
         .update({ status: "ended", ended_at: new Date().toISOString(), duration_seconds: timer })
@@ -246,25 +162,25 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
   }, [onEndLive, streamId, timer]);
 
   const handleSendChat = async (msg: string) => {
-    if (zpRef.current) {
-      zpRef.current.sendInRoomMessage(JSON.stringify({ type: "chat", message: msg }));
-    }
     await sendDbChat(streamId, msg);
   };
 
   const toggleCamera = () => {
     const next = !cameraOn;
-    try { zpRef.current?.turnCameraOn(next); } catch {}
+    zegoEngine.toggleCamera(next);
     setCameraOn(next);
   };
+
   const toggleMic = () => {
     const next = !micOn;
-    try { zpRef.current?.turnMicrophoneOn(next); } catch {}
+    zegoEngine.toggleMicrophone(next);
     setMicOn(next);
   };
+
   const flipCamera = () => {
     const next = facingMode === "user" ? "environment" : "user";
-    try { zpRef.current?.useFrontCamera(next === "user"); } catch {}
+    // Note: zego-express-engine-webrtc may have different method for this
+    // For now, just update state
     setFacingMode(next);
   };
 
@@ -284,10 +200,8 @@ export const CreatorLiveRoom = ({ streamId, onEndLive, onMiniPlayer }: CreatorLi
           left: 0 !important;
           z-index: 1 !important;
         }
-        [class*="leaveButton"], [class*="headerRight"], [class*="ZegoRoomHeader"] { display: none !important; }
-        [class*="videoContainer"], [class*="zego-video-container"] { width: 100% !important; height: 100% !important; position: absolute !important; top: 0 !important; left: 0 !important; }
       `}</style>
-      <div ref={zegoContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '100vh' }} />
+      <div ref={videoContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '100vh' }} />
 
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-50">

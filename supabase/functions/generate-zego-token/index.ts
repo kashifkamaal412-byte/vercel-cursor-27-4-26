@@ -21,8 +21,6 @@ function getCorsHeaders(req: Request) {
 }
 
 const TOKEN_EFFECTIVE_TIME_SECONDS = 7200;
-const IV_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";
-const encoder = new TextEncoder();
 
 type ParticipantRole = "host" | "audience";
 
@@ -50,6 +48,16 @@ function buildZegoUserId(authUserId: string, role: ParticipantRole, sessionKey?:
     ? `${base}_${roleSuffix}_${sessionSuffix}`
     : `${base}_${roleSuffix}`;
   return composed.slice(0, 64);
+}
+
+/** Convert hex string to Uint8Array (32 bytes from 64-char hex) */
+function hexToBytes(hex: string): Uint8Array {
+  if (hex.length !== 64) throw new Error("Invalid hex string length");
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -86,15 +94,9 @@ function pkcs5Padding(data: Uint8Array, blockSize: number): Uint8Array {
   return padded;
 }
 
-function makeNonce(): number {
-  return Math.floor(Math.random() * 0x7fffffff);
-}
-
 function makeRandomIv(): Uint8Array {
   const iv = new Uint8Array(16);
-  for (let i = 0; i < iv.length; i++) {
-    iv[i] = IV_CHARS.charCodeAt(Math.floor(Math.random() * IV_CHARS.length));
-  }
+  crypto.getRandomValues(iv);
   return iv;
 }
 
@@ -104,13 +106,13 @@ async function aesEncrypt(plainText: Uint8Array, key: Uint8Array, iv: Uint8Array
   return new Uint8Array(encrypted);
 }
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let result = "";
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
-    result += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
-  return result;
+  return btoa(binary);
 }
 
 function buildPayload(roomId: string, role: ParticipantRole): string {
@@ -120,16 +122,6 @@ function buildPayload(roomId: string, role: ParticipantRole): string {
     privilege: { 1: 1, 2: canPublish },
     stream_id_list: role === "host" ? [`${roomId}_main`] : [],
   });
-}
-
-/** Convert hex string to Uint8Array (32 bytes from 64-char hex) */
-function hexToBytes(hex: string): Uint8Array {
-  if (hex.length !== 64) throw new Error("Invalid hex string length");
-  const bytes = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
 }
 
 async function generateToken04(
@@ -152,16 +144,16 @@ async function generateToken04(
     user_id: userId,
     ctime: now,
     expire,
-    nonce: makeNonce(),
+    nonce: Math.floor(Math.random() * 0x7fffffff),
     payload,
   };
 
-  const plainText = encoder.encode(JSON.stringify(tokenInfo));
+  const plainText = new TextEncoder().encode(JSON.stringify(tokenInfo));
   const iv = makeRandomIv();
   const encrypted = await aesEncrypt(plainText, serverSecretBytes, iv);
 
   const packed = concatBytes([packInt64(expire), packString(iv), packString(encrypted)]);
-  return `04${btoa(bytesToBinaryString(packed))}`;
+  return `04${bytesToBase64(packed)}`;
 }
 
 Deno.serve(async (req) => {

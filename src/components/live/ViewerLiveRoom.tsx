@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +17,7 @@ import { LivePollSystem } from "./LivePollSystem";
 import { VIPBadge, VIPEntranceEffect, getViewerLevel } from "./VIPBadgeSystem";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Heart, Send, Gift, X, Eye, UserPlus, Share2, Flag, Crown, Sparkles } from "lucide-react";
+import { zegoEngine } from "@/lib/zegoEngine";
 import { toast } from "sonner";
 import type { Gift as GiftType } from "@/data/giftData";
 
@@ -32,16 +32,9 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
   const chatMessages = useLiveRealtimeChat(stream.id);
   const viewerCount = useLiveRealtimeViewers(stream.id);
   const { latestGift } = useLiveRealtimeGifts(stream.id);
-  const { joinStream, leaveStream, sendChatMessage: sendDbChat, sendLiveGift, requestToJoinAsGuest, getZegoToken } = useLiveStream();
+  const { joinStream, leaveStream, sendChatMessage: sendDbChat, sendLiveGift, requestToJoinAsGuest } = useLiveStream();
 
-  const zegoContainerRef = useRef<HTMLDivElement>(null);
-  const zpRef = useRef<any>(null);
-  const initedRef = useRef(false);
-  const mediaSyncRef = useRef<number | null>(null);
-  const observerRef = useRef<MutationObserver | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const sessionKeyRef = useRef(Math.random().toString(36).slice(2, 10));
-
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState("");
   const [isConnecting, setIsConnecting] = useState(true);
   const [showGiftSheet, setShowGiftSheet] = useState(false);
@@ -53,6 +46,7 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
   const [activeBattleId, setActiveBattleId] = useState<string | null>(null);
   const [entranceEffect, setEntranceEffect] = useState<{ name: string; level: any } | null>(null);
   const giftComboTimer = useRef<NodeJS.Timeout | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -114,148 +108,67 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
     }
   }, [user, profile]);
 
-  // Media sync
-  const syncMedia = useCallback(() => {
-    const container = zegoContainerRef.current;
-    if (!container) return;
-    container.querySelectorAll("video, audio").forEach((el) => {
-      const media = el as HTMLVideoElement | HTMLAudioElement;
-      if (media.muted) media.muted = false;
-      if (media.paused) media.play().catch(() => {});
-      media.autoplay = true;
-    });
-  }, []);
-
-  // Subscribe to stream status
+  // Initialize Zego engine and start viewing
   useEffect(() => {
-    const channel = supabase
-      .channel(`stream-status-${stream.id}`)
-      .on("postgres_changes", {
-        event: "UPDATE", schema: "public", table: "live_streams",
-        filter: `id=eq.${stream.id}`,
-      }, (payload: any) => {
-        if (payload.new.status === "ended") {
-          toast.info("Stream has ended");
-          if (mediaSyncRef.current) clearInterval(mediaSyncRef.current);
-          if (observerRef.current) observerRef.current.disconnect();
-          try { zpRef.current?.destroy(); zpRef.current = null; } catch {}
-          leaveStream(stream.id).catch(() => {});
-          onExit();
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [stream.id, onExit]);
+    if (!user || !videoContainerRef.current) return;
 
-  // Ensure video elements are visible and fill the container for audience view
-  useEffect(() => {
-    const container = zegoContainerRef.current;
-    if (!container) return;
-    const observer = new MutationObserver(() => {
-      const videos = container.querySelectorAll('video');
-      videos.forEach((video) => {
-        const v = video as HTMLVideoElement;
-        v.style.width = '100%';
-        v.style.height = '100%';
-        v.style.objectFit = 'cover';
-        v.style.position = 'absolute';
-        v.style.top = '0';
-        v.style.left = '0';
-        v.style.zIndex = '1';
-      });
-    });
-    observer.observe(container, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
-  // Zego initialization
-  useEffect(() => {
-    if (!user || !zegoContainerRef.current || initedRef.current) return;
-    initedRef.current = true;
-
-    const initZego = async () => {
+    const initViewer = async () => {
       try {
         setIsConnecting(true);
+        
+        const appID = parseInt(import.meta.env.VITE_ZEGO_APP_ID || "1497584012");
+        const serverSecret = import.meta.env.VITE_ZEGO_APP_SIGN || "";
+        const userName = profile?.display_name || profile?.username || "Viewer";
+        const zegoUserId = `audience_${user.id.slice(0, 8)}`;
+        const sanitizedRoomId = stream.id.replace(/[^a-zA-Z0-9]/g, "");
+
+        console.log("🔴 [Viewer] Initializing Zego Engine...");
+
+        // Initialize engine
+        await zegoEngine.initialize({
+          appID,
+          serverSecret,
+          userID: zegoUserId,
+          userName,
+          roomID: sanitizedRoomId,
+        }, false); // false = not host
+
+        // Get token from Edge Function
+        const token = await zegoEngine.generateToken(sanitizedRoomId, zegoUserId, false);
+        zegoEngine.setToken(token);
+
+        // Login to room
+        await zegoEngine.loginRoom(token);
+
+        // Listen for remote streams
+        zegoEngine.onRemoteStreamUpdate(({ streamList }) => {
+          streamList.forEach((stream: any) => {
+            console.log("🔴 [Viewer] New remote stream:", stream.streamID);
+            // Play the remote stream in our video container
+            if (videoContainerRef.current) {
+              zegoEngine.startPlaying(stream.streamID, videoContainerRef.current);
+            }
+          });
+        });
+
+        // Also join via Supabase for chat/realtime
         await joinStream(stream.id);
 
-        const sanitizedRoomId = stream.id.replace(/[^a-zA-Z0-9]/g, "");
-        const userName = profile?.display_name || profile?.username || "Viewer";
-        
-        // Use test token generation with AppSign from env
-        const appId = parseInt(import.meta.env.VITE_ZEGO_APP_ID || "1497584012");
-        const appSign = import.meta.env.VITE_ZEGO_APP_SIGN || "";
-        const zegoUserId = `audience_${user.id.slice(0, 8)}`;
-        
-        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-          appId, appSign, sanitizedRoomId, zegoUserId, userName
-        );
-
-        const zp = ZegoUIKitPrebuilt.create(kitToken);
-        zpRef.current = zp;
-
-        await zp.joinRoom({
-          container: zegoContainerRef.current!,
-          scenario: {
-            mode: ZegoUIKitPrebuilt.LiveStreaming,
-            config: { role: ZegoUIKitPrebuilt.Audience },
-          },
-          showPreJoinView: false,
-          showTextChat: false,
-          showUserList: false,
-          showLeavingView: false,
-          showMyCameraToggleButton: false,
-          showMyMicrophoneToggleButton: false,
-          showAudioVideoSettingsButton: false,
-          layout: "Auto",
-          onJoinRoom: () => {
-            setIsConnecting(false);
-            toast.success("Connected to live!");
-            mediaSyncRef.current = window.setInterval(syncMedia, 500);
-            observerRef.current = new MutationObserver(() => syncMedia());
-            if (zegoContainerRef.current) {
-              observerRef.current.observe(zegoContainerRef.current, { childList: true, subtree: true });
-            }
-          },
-          onInRoomMessageReceived: (messageInfo: any) => {
-            try {
-              const raw = typeof messageInfo.message === "string"
-                ? messageInfo.message
-                : messageInfo.message?.message || "";
-              const msgData = JSON.parse(raw);
-              if (msgData.type === "stream-ended") {
-                toast.info("Stream has ended");
-                onExit();
-              } else if (msgData.type === "gift") {
-                setActiveGift({
-                  id: String(Date.now()),
-                  senderName: messageInfo.fromUser?.userName || "Someone",
-                  giftName: msgData.giftName,
-                  giftValue: msgData.giftValue,
-                  giftImage: msgData.giftImage,
-                  emoji: msgData.emoji,
-                });
-              }
-            } catch {}
-          },
-          onLeaveRoom: () => {
-            console.log("🔴 [Viewer] onLeaveRoom called, exiting");
-            onExit();
-          },
-        });
+        setIsConnecting(false);
+        toast.success("Connected to live!");
+        console.log("🔴 [Viewer] Successfully connected to live stream");
       } catch (err: any) {
         console.error("❌ [Viewer] Error:", err);
-        initedRef.current = false;
         setIsConnecting(false);
         toast.error("Failed to connect to live stream");
       }
     };
 
-    initZego();
+    initViewer();
 
     return () => {
-      if (mediaSyncRef.current) clearInterval(mediaSyncRef.current);
-      if (observerRef.current) observerRef.current.disconnect();
-      try { zpRef.current?.destroy(); zpRef.current = null; } catch {}
+      console.log("🔴 [Viewer] Cleaning up Zego engine...");
+      zegoEngine.destroy();
       leaveStream(stream.id);
     };
   }, [user, stream.id]);
@@ -263,20 +176,11 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
-    if (zpRef.current) {
-      zpRef.current.sendInRoomMessage(JSON.stringify({ type: "chat", message: message.trim() }));
-    }
     sendDbChat(stream.id, message.trim());
     setMessage("");
   };
 
   const handleSendGift = async (gift: GiftType, quantity: number) => {
-    if (zpRef.current) {
-      zpRef.current.sendInRoomMessage(JSON.stringify({
-        type: "gift", giftName: gift.name, giftValue: gift.value * quantity,
-        giftImage: gift.imageUrl || null, emoji: gift.emoji,
-      }));
-    }
     await sendLiveGift(stream.id, gift.name, gift.value * quantity, gift.imageUrl);
     toast.success(`Sent ${gift.name}!`);
   };
@@ -326,7 +230,8 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col">
-      <div ref={zegoContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '100vh' }} />
+      {/* Video container for Zego engine */}
+      <div ref={videoContainerRef} className="absolute inset-0 w-full h-full z-0" style={{ minHeight: '100vh' }} />
 
       {/* Connecting overlay */}
       <AnimatePresence>
@@ -587,8 +492,6 @@ export const ViewerLiveRoom = ({ stream, onExit }: ViewerLiveRoomProps) => {
           left: 0 !important;
           z-index: 1 !important;
         }
-        [class*="leaveButton"], [class*="headerRight"], [class*="ZegoRoomHeader"] { display: none !important; }
-        [class*="videoContainer"], [class*="zego-video-container"] { width: 100% !important; height: 100% !important; position: absolute !important; top: 0 !important; left: 0 !important; }
       `}</style>
     </div>
   );
