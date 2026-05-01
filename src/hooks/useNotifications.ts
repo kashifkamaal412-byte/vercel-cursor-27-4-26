@@ -20,22 +20,23 @@ const useFollowNotifications = () => {
   useEffect(() => {
     if (!user) return;
     // Real-time subscription
-    const channel = supabase
-      .channel('follow-notifications')
+    const channel = supabase.channel('follow-notifications');
+    channel
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'follows',
-        filter: `user_id=eq.${user.id}`
-      },
-      (payload) => {
+        filter: `user_id=eq.${user.id}`,
+      }, (payload) => {
         const newNotif = payload.new as FollowNotification;
-        setNotifications([newNotif, ...notifications]);
+        setNotifications(prev => [newNotif, ...prev]);
         if (!newNotif.is_read) setUnreadCount(prev => prev + 1);
       })
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      channel.unsubscribe();
+    };
   }, [user]);
 
   const markAsRead = async (id: string) => {
